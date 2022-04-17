@@ -1,10 +1,9 @@
-
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 bl_info = {
-    "name": "Node Presets",
+    "name": "Node Presets Extended",
     "description": "Useful and time-saving tools for node group workflow",
-    "author": "Campbell Barton",
+    "author": "Campbell Barton, Stephan Kellermayr",
     "version": (1, 1),
     "blender": (2, 80, 0),
     "location": "Node Editors > Add > Template",
@@ -97,24 +96,44 @@ def node_template_add(context, filepath, node_group, ungroup, report):
 # -----------------------------------------------------------------------------
 # Node Template Prefs
 
-def node_search_path(context):
+def node_search_path(context, ui_type):
     preferences = context.preferences
     addon_prefs = preferences.addons[__name__].preferences
-    dirpath = addon_prefs.search_path
-    return dirpath
+    node_paths = {
+        "GeometryNodeTree": addon_prefs.search_path_geometry,
+        "ShaderNodeTree": addon_prefs.search_path_shader,
+        "CompositorNodeTree": addon_prefs.search_path_compositing,
+        "TextureNodeTree": addon_prefs.search_path_texture
+    }
+    return node_paths.get(ui_type)
 
 
 class NodeTemplatePrefs(AddonPreferences):
     bl_idname = __name__
 
-    search_path: StringProperty(
-        name="Directory of blend files with node-groups",
+    search_path_geometry: StringProperty(
+        name="Geometry nodes path",
+        subtype='DIR_PATH',
+    )
+    search_path_shader: StringProperty(
+        name="Shader nodes path",
+        subtype='DIR_PATH',
+    )
+    search_path_compositing: StringProperty(
+        name="Compositing nodes path",
+        subtype='DIR_PATH',
+    )
+    search_path_texture: StringProperty(
+        name="Texture nodes path",
         subtype='DIR_PATH',
     )
 
     def draw(self, context):
         layout = self.layout
-        layout.prop(self, "search_path")
+        layout.prop(self, "search_path_geometry")
+        layout.prop(self, "search_path_shader")
+        layout.prop(self, "search_path_compositing")
+        layout.prop(self, "search_path_texture")
 
 
 class NODE_OT_template_add(Operator):
@@ -128,6 +147,10 @@ class NODE_OT_template_add(Operator):
         subtype='FILE_PATH',
     )
     group_name: StringProperty()
+
+    @classmethod
+    def poll(cls, context):
+        return context.space_data.node_tree
 
     def execute(self, context):
         node_template_add(context, self.filepath, self.group_name, True, self.report)
@@ -144,12 +167,25 @@ class NODE_OT_template_add(Operator):
 # Node menu list
 
 def node_template_cache(context, *, reload=False):
-    dirpath = node_search_path(context)
+    dirpath = node_search_path(context, context.area.ui_type)
 
-    if node_template_cache._node_cache_path != dirpath:
-        reload = True
+    if (context.area.ui_type == "GeometryNodeTree"):
+        if node_template_cache._node_cache_geometry_path != dirpath:
+            reload = True
+        node_cache = node_template_cache._node_cache_geometry
+    elif (context.area.ui_type == "ShaderNodeTree"):
+        if node_template_cache._node_cache_shader_path != dirpath:
+            reload = True
+        node_cache = node_template_cache._node_cache_shader
+    elif (context.area.ui_type == "CompositorNodeTree"):
+        if node_template_cache._node_cache_compositing_path != dirpath:
+            reload = True
+        node_cache = node_template_cache._node_cache_compositing
+    elif (context.area.ui_type == "TextureNodeTree"):
+        if node_template_cache._node_cache_texture_path != dirpath:
+            reload = True
+        node_cache = node_template_cache._node_cache_texture
 
-    node_cache = node_template_cache._node_cache
     if reload:
         node_cache = []
     if node_cache:
@@ -161,16 +197,34 @@ def node_template_cache(context, *, reload=False):
             with bpy.data.libraries.load(filepath) as (data_from, data_to):
                 for group_name in data_from.node_groups:
                     if not group_name.startswith("_"):
-                        node_cache.append((filepath, group_name))
+                        node_cache.append((group_name, filepath))
 
-    node_template_cache._node_cache = node_cache
-    node_template_cache._node_cache_path = dirpath
+    node_cache = sorted(node_cache)
+
+    if (context.area.ui_type == "GeometryNodeTree"):
+        node_template_cache._node_cache_geometry = node_cache
+        node_template_cache._node_cache_geometry_path = dirpath
+    elif (context.area.ui_type == "ShaderNodeTree"):
+        node_template_cache._node_cache_shader = node_cache
+        node_template_cache._node_cache_shader_path = dirpath
+    elif (context.area.ui_type == "CompositorNodeTree"):
+        node_template_cache._node_cache_compositing = node_cache
+        node_template_cache._node_cache_compositing_path = dirpath
+    elif (context.area.ui_type == "TextureNodeTree"):
+        node_template_cache._node_cache_texture = node_cache
+        node_template_cache._node_cache_texture_path = dirpath
 
     return node_cache
 
 
-node_template_cache._node_cache = []
-node_template_cache._node_cache_path = ""
+node_template_cache._node_cache_geometry = []
+node_template_cache._node_cache_geometry_path = ""
+node_template_cache._node_cache_shader = []
+node_template_cache._node_cache_shader_path = ""
+node_template_cache._node_cache_compositing = []
+node_template_cache._node_cache_compositing_path = ""
+node_template_cache._node_cache_texture = []
+node_template_cache._node_cache_texture_path = ""
 
 
 class NODE_MT_template_add(Menu):
@@ -179,7 +233,7 @@ class NODE_MT_template_add(Menu):
     def draw(self, context):
         layout = self.layout
 
-        dirpath = node_search_path(context)
+        dirpath = node_search_path(context, context.area.ui_type)
         if dirpath == "":
             layout.label(text="Set search dir in the addon-prefs")
             return
@@ -190,7 +244,7 @@ class NODE_MT_template_add(Menu):
             node_items = ()
             layout.label(text=repr(ex), icon='ERROR')
 
-        for filepath, group_name in node_items:
+        for group_name, filepath in node_items:
             props = layout.operator(
                 NODE_OT_template_add.bl_idname,
                 text=group_name,
