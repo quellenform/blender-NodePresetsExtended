@@ -18,3 +18,5 @@ This is a modified version of the original add-on [Node Presets](https://docs.bl
 - All node groups found in the files are then accessible in the corresponding areas via the menu `node editors --> Add --> Template`
 
 > **Note**: Node Groups whose name starts with an underscore are NOT included!
+
+More details can be found at [blender.stackexchange.com](https://blender.stackexchange.com/a/260854/145249).
